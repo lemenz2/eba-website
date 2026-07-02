@@ -463,8 +463,7 @@ def calculate():
 if __name__ == '__main__':
     print("="*60)
     print("DXF LASER PRICING - INTERACTIVE VIEWPORT")
-    print("Server: http://127.0.0.1:5000")
-    print("Click on shapes to select Main Part and Holes")
-    print("Drag to pan | Scroll to zoom | Shift+Click to toggle holes")
     print("="*60)
-    app.run(debug=True, host='127.0.0.1', port=5000, threaded=False)
+    
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
