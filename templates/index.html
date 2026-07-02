@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DXF Laser - Interactive Viewport</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, sans-serif; background: #0a0e1a; color: #f3f4f6; overflow: hidden; height: 100vh; }
+        
+        .header { background: #111827; border-bottom: 1px solid #2d3748; padding: 0.75rem 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+        .header h1 { font-size: 1.25rem; }
+        .header p { font-size: 0.75rem; color: #9ca3af; }
+        
+        .app { display: flex; height: calc(100vh - 60px); }
+        
+        .sidebar { width: 420px; min-width: 420px; background: #111827; border-right: 1px solid #2d3748; padding: 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; }
+        
+        .viewport { flex: 1; background: #0a0e1a; position: relative; overflow: hidden; }
+        .viewport canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+        .viewport canvas:active { cursor: grabbing; }
+        
+        .upload-box { border: 2px dashed #2d3748; border-radius: 8px; padding: 1rem; text-align: center; cursor: pointer; background: #1f2937; }
+        .upload-box:hover { border-color: #3b82f6; }
+        .upload-box.dragover { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
+        
+        .form-group { display: flex; flex-direction: column; gap: 0.25rem; }
+        .form-group label { font-size: 0.75rem; color: #9ca3af; }
+        .form-group select, .form-group input { background: #1f2937; border: 1px solid #2d3748; border-radius: 4px; padding: 0.4rem 0.5rem; color: white; font-size: 0.8rem; }
+        .form-group select:focus, .form-group input:focus { outline: none; border-color: #3b82f6; }
+        
+        .param-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+        
+        .btn { background: #3b82f6; border: none; padding: 0.4rem 1rem; border-radius: 4px; color: white; cursor: pointer; font-size: 0.8rem; transition: background 0.2s; }
+        .btn:hover { background: #2563eb; }
+        .btn-success { background: #10b981; }
+        .btn-success:hover { background: #059669; }
+        .btn-warning { background: #f59e0b; }
+        .btn-warning:hover { background: #d97706; }
+        .btn-sm { padding: 0.2rem 0.6rem; font-size: 0.7rem; }
+        .btn-block { width: 100%; }
+        
+        .info-panel { background: #1f2937; border-radius: 6px; padding: 0.75rem; }
+        .info-row { display: flex; justify-content: space-between; padding: 0.15rem 0; font-size: 0.75rem; border-bottom: 1px solid #2d3748; }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: #9ca3af; }
+        .info-value { font-weight: 600; }
+        .info-value.price { color: #10b981; font-size: 1.1rem; }
+        .info-value.detected { color: #f59e0b; font-size: 0.7rem; font-weight: normal; }
+        
+        .legend { display: flex; gap: 0.75rem; padding: 0.5rem; background: #1f2937; border-radius: 4px; flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 0.3rem; font-size: 0.7rem; color: #9ca3af; }
+        .legend-color { width: 20px; height: 3px; border-radius: 2px; }
+        
+        .holes-table { max-height: 120px; overflow-y: auto; font-size: 0.7rem; }
+        .holes-table table { width: 100%; border-collapse: collapse; }
+        .holes-table th { text-align: left; color: #9ca3af; font-weight: normal; padding: 0.15rem 0.25rem; border-bottom: 1px solid #2d3748; }
+        .holes-table td { padding: 0.15rem 0.25rem; border-bottom: 1px solid #1f2937; }
+        .badge { background: rgba(239,68,68,0.2); color: #ef4444; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.6rem; }
+        
+        .toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+        .toolbar .btn { font-size: 0.7rem; padding: 0.2rem 0.6rem; }
+        
+        .file-status { font-size: 0.75rem; color: #9ca3af; }
+        .file-status.loaded { color: #10b981; }
+        
+        .status-bar { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); padding: 0.3rem 1rem; border-radius: 20px; font-size: 0.7rem; color: #9ca3af; pointer-events: none; white-space: nowrap; }
+        
+        .zoom-controls { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 5px; }
+        .zoom-controls button { background: rgba(0,0,0,0.7); border: 1px solid #2d3748; border-radius: 4px; color: white; width: 32px; height: 32px; font-size: 1.2rem; cursor: pointer; transition: background 0.2s; }
+        .zoom-controls button:hover { background: #3b82f6; }
+        
+        .detected-info { background: #1f2937; border-radius: 6px; padding: 0.5rem; font-size: 0.75rem; border-left: 3px solid #f59e0b; }
+        .detected-info .label { color: #9ca3af; }
+        .detected-info .value { color: #f3f4f6; font-weight: 600; }
+        
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 2px; }
+        
+        @media (max-width: 768px) { .sidebar { width: 100%; min-width: unset; max-height: 50vh; } .app { flex-direction: column; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>🔬 DXF Laser Pricing</h1>
+            <p>Interactive Viewport - Click shapes to select</p>
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+            <span style="font-size: 0.7rem; color: #9ca3af;">Fixed margin: 10mm (1cm)</span>
+            <span style="font-size: 0.7rem; color: #9ca3af;">Scroll sensitivity: <input type="range" id="scrollSensitivity" min="1" max="20" value="8" style="width: 80px; vertical-align: middle;"></span>
+        </div>
+    </div>
+    
+    <div class="app">
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <!-- Upload -->
+            <div class="upload-box" id="dropzone">
+                <div style="font-size: 1.5rem;">📐</div>
+                <div style="font-size: 0.8rem;">Drop DXF or click</div>
+                <input type="file" id="fileInput" accept=".dxf" style="display:none;">
+                <div id="fileStatus" class="file-status">No file loaded</div>
+            </div>
+            
+            <!-- Auto-detected properties -->
+            <div class="detected-info" id="detectedInfo">
+                <div><span class="label">📄 File: </span><span class="value" id="detectedFilename">—</span></div>
+                <div><span class="label">🧱 Material: </span><span class="value" id="detectedMaterial">—</span></div>
+                <div><span class="label">📏 Thickness: </span><span class="value" id="detectedThickness">—</span></div>
+                <div><span class="label">🔢 Quantity: </span><span class="value" id="detectedQuantity">—</span></div>
+            </div>
+            
+            <!-- Material & Thickness -->
+            <div class="form-group">
+                <label>Material</label>
+                <select id="material">
+                    {% for m in materials %}
+                    <option value="{{ m.id }}">{{ m.name }} - {{ m.price_per_kg }} TND/kg</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Thickness (mm)</label>
+                <input type="number" id="thickness" value="1.5" step="0.1" min="0.1">
+            </div>
+            <div class="form-group">
+                <label>Quantity (pieces)</label>
+                <input type="number" id="quantity" value="1" step="1" min="1">
+            </div>
+            
+            <!-- Machine Parameters -->
+            <div class="param-grid">
+                <div class="form-group"><label>Speed (mm/min)</label><input type="number" id="speed" value="4000" step="100"></div>
+                <div class="form-group"><label>Piercing (sec)</label><input type="number" id="pierce" value="5" step="0.5"></div>
+                <div class="form-group"><label>Rate (TND/h)</label><input type="number" id="hourly" value="250" step="10"></div>
+                <div class="form-group"><label>Parts/sheet</label><input type="number" id="parts" value="1" step="1" min="1"></div>
+            </div>
+            
+            <!-- Controls -->
+            <div class="toolbar">
+                <button class="btn btn-success" onclick="calculatePrice()">💰 Calculate</button>
+                <button class="btn btn-warning" onclick="resetView()">Reset View</button>
+                <button class="btn" onclick="fitToView()">Fit to View</button>
+                <button class="btn" onclick="autoSelect()">Auto Select</button>
+            </div>
+            
+            <!-- Legend -->
+            <div class="legend">
+                <span class="legend-item"><span class="legend-color" style="background: #00d4ff;"></span> Main Part</span>
+                <span class="legend-item"><span class="legend-color" style="background: #ef4444;"></span> Hole</span>
+                <span class="legend-item"><span class="legend-color" style="background: #f59e0b;"></span> Unassigned</span>
+                <span class="legend-item"><span class="legend-color" style="background: #3b82f6; border: 1px dashed #3b82f6;"></span> Sheet Margin</span>
+            </div>
+            
+            <!-- Info Panel -->
+            <div class="info-panel" id="infoPanel">
+                <div class="info-row"><span class="info-label">Part Size</span><span class="info-value" id="partSize">— × — mm</span></div>
+                <div class="info-row"><span class="info-label">Sheet Size</span><span class="info-value" id="sheetSize">— × — mm</span></div>
+                <div class="info-row"><span class="info-label">Cut Length</span><span class="info-value" id="cutLength">— mm</span></div>
+                <div class="info-row"><span class="info-label">Piercings</span><span class="info-value" id="piercings">—</span></div>
+                <div class="info-row"><span class="info-label">Weight</span><span class="info-value" id="weight">— kg</span></div>
+                <div class="info-row"><span class="info-label">Material Price</span><span class="info-value" id="matPrice">— TND</span></div>
+                <div class="info-row"><span class="info-label">Cutting Price</span><span class="info-value" id="cutPrice">— TND</span></div>
+                <div class="info-row"><span class="info-label">TOTAL PRICE</span><span class="info-value price" id="finalPrice">— TND</span></div>
+            </div>
+            
+            <!-- Holes Table -->
+            <div class="info-panel" style="max-height: 150px; overflow: hidden;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: #9ca3af; margin-bottom: 0.25rem;">
+                    <span>🕳️ Holes (<span id="holeCount">0</span>)</span>
+                </div>
+                <div class="holes-table" id="holesTable">
+                    <table>
+                        <thead><tr><th>#</th><th>Diam (mm)</th><th>Perim (mm)</th></tr></thead>
+                        <tbody id="holesBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Viewport -->
+        <div class="viewport" id="viewport">
+            <canvas id="canvas"></canvas>
+            
+            <!-- Zoom Controls -->
+            <div class="zoom-controls">
+                <button onclick="zoomIn()">+</button>
+                <button onclick="zoomOut()">−</button>
+                <button onclick="fitToView()" style="font-size: 0.7rem;">⟐</button>
+            </div>
+            
+            <div class="status-bar" id="statusBar">🖱️ Click shapes to select • Drag to pan • Scroll to zoom • Shift+Click = toggle hole</div>
+        </div>
+    </div>
+    
+    <script>
+        // ============ STATE ============
+        const state = {
+            sessionId: null,
+            shapes: [],
+            outerId: 0,
+            holeIds: [],
+            partWidth: 0,
+            partHeight: 0,
+            sheetWidth: 0,
+            sheetHeight: 0,
+            margin: 10,
+            totalCutLength: 0,
+            
+            // Viewport
+            panX: 0,
+            panY: 0,
+            zoom: 1,
+            isDragging: false,
+            dragStartX: 0,
+            dragStartY: 0,
+            lastPanX: 0,
+            lastPanY: 0,
+            
+            // Selection
+            selectedShape: null,
+            
+            // Detected properties
+            detectedMaterial: null,
+            detectedThickness: null,
+            detectedQuantity: null,
+            filename: null,
+        };
+        
+        // ============ SCROLL SENSITIVITY ============
+        let scrollSensitivity = 8; // Default
+        document.getElementById('scrollSensitivity').addEventListener('input', function() {
+            scrollSensitivity = parseInt(this.value);
+            document.getElementById('statusBar').textContent = `Scroll sensitivity: ${scrollSensitivity} (Lower = slower, Higher = faster)`;
+            setTimeout(() => {
+                document.getElementById('statusBar').textContent = '🖱️ Click shapes to select • Drag to pan • Scroll to zoom • Shift+Click = toggle hole';
+            }, 2000);
+        });
+        
+        // ============ FILENAME PARSING ============
+        function parseFilename(filename) {
+            // Remove extension
+            let name = filename.replace(/\.dxf$/i, '').replace(/\.DXF$/i, '');
+            
+            // Patterns to detect
+            let result = {
+                material: null,
+                thickness: null,
+                quantity: null,
+                raw: name
+            };
+            
+            // Material detection
+            const materialPatterns = [
+                { pattern: /noire|noir|black/i, value: 'Acier Noir' },
+                { pattern: /inox|stainless/i, value: 'Acier Inoxydable 304' },
+                { pattern: /aluminium|alum|aluminum/i, value: 'Aluminium 6061' },
+                { pattern: /laiton|brass/i, value: 'Laiton' },
+                { pattern: /cuivre|copper/i, value: 'Cuivre' },
+                { pattern: /titane|titanium/i, value: 'Titane Grade 5' },
+                { pattern: /acier|steel/i, value: 'Acier Doux' },
+            ];
+            
+            for (let p of materialPatterns) {
+                if (p.pattern.test(name)) {
+                    result.material = p.value;
+                    break;
+                }
+            }
+            
+            // Thickness detection (epaisseur, ep, e, thickness)
+            const thicknessPatterns = [
+                /ep\s*([\d.]+)/i,
+                /e\s*([\d.]+)/i,
+                /thick\s*([\d.]+)/i,
+                /(\d+)[\s._-]*mm/i,
+                /mm[\s._-]*(\d+)/i,
+                /epaisseur[\s._-]*(\d+)/i,
+            ];
+            
+            for (let pattern of thicknessPatterns) {
+                const match = name.match(pattern);
+                if (match) {
+                    result.thickness = parseFloat(match[1]);
+                    break;
+                }
+            }
+            
+            // Quantity detection (qte, qt, quantity, nb, number)
+            const quantityPatterns = [
+                /qte[\s._-]*(\d+)/i,
+                /qt[\s._-]*(\d+)/i,
+                /quantity[\s._-]*(\d+)/i,
+                /nb[\s._-]*(\d+)/i,
+                /(\d+)[\s._-]*pcs/i,
+                /(\d+)[\s._-]*pieces/i,
+                /p(\d+)/i,
+            ];
+            
+            for (let pattern of quantityPatterns) {
+                const match = name.match(pattern);
+                if (match) {
+                    result.quantity = parseInt(match[1]);
+                    break;
+                }
+            }
+            
+            // If no quantity found, default to 1
+            if (!result.quantity) {
+                result.quantity = 1;
+            }
+            
+            // If no thickness found, default to null (user sets manually)
+            if (!result.thickness) {
+                // Try to find any number that could be thickness
+                const numMatch = name.match(/(\d+)[\s._-](?!mm)/);
+                if (numMatch) {
+                    // Check if it's a reasonable thickness (0.5-50mm)
+                    const val = parseFloat(numMatch[1]);
+                    if (val >= 0.5 && val <= 50) {
+                        result.thickness = val;
+                    }
+                }
+            }
+            
+            return result;
+        }
+        
+        // ============ DOM REFS ============
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const viewport = document.getElementById('viewport');
+        
+        // ============ CANVAS SIZING ============
+        function resizeCanvas() {
+            const rect = viewport.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            render();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        
+        // ============ ZOOM CONTROLS ============
+        function zoomIn() {
+            state.zoom = Math.min(10, state.zoom * 1.3);
+            render();
+        }
+        
+        function zoomOut() {
+            state.zoom = Math.max(0.02, state.zoom / 1.3);
+            render();
+        }
+        
+        // ============ FIT TO VIEW ============
+        function fitToView() {
+            if (!state.shapes.length) {
+                state.zoom = 1;
+                state.panX = 0;
+                state.panY = 0;
+                render();
+                return;
+            }
+            
+            const W = canvas.width, H = canvas.height;
+            let allVerts = [];
+            state.shapes.forEach(s => allVerts = allVerts.concat(s.vertices));
+            if (!allVerts.length) return;
+            
+            const minX = Math.min(...allVerts.map(v => v[0]));
+            const maxX = Math.max(...allVerts.map(v => v[0]));
+            const minY = Math.min(...allVerts.map(v => v[1]));
+            const maxY = Math.max(...allVerts.map(v => v[1]));
+            const rangeX = maxX - minX;
+            const rangeY = maxY - minY;
+            
+            const padding = 0.15;
+            const totalRangeX = rangeX * (1 + padding * 2);
+            const totalRangeY = rangeY * (1 + padding * 2);
+            
+            const zoomX = W / totalRangeX / Math.min(W, H) * 0.15;
+            const zoomY = H / totalRangeY / Math.min(W, H) * 0.15;
+            state.zoom = Math.min(zoomX, zoomY) * 1.1;
+            
+            const cx = (minX + maxX) / 2;
+            const cy = (minY + maxY) / 2;
+            const scale = state.zoom * Math.min(W, H) * 0.15;
+            state.panX = -cx * scale;
+            state.panY = cy * scale;
+            
+            render();
+        }
+        
+        // ============ RENDER ENGINE ============
+        function render() {
+            const W = canvas.width, H = canvas.height;
+            ctx.clearRect(0, 0, W, H);
+            
+            const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W*0.7);
+            grad.addColorStop(0, '#111827');
+            grad.addColorStop(1, '#0a0e1a');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+            
+            if (!state.shapes.length) {
+                ctx.fillStyle = '#4a5568';
+                ctx.font = '18px system-ui';
+                ctx.textAlign = 'center';
+                ctx.fillText('📐 Upload a DXF file to begin', W/2, H/2);
+                return;
+            }
+            
+            const cx = W/2 + state.panX;
+            const cy = H/2 + state.panY;
+            const scale = state.zoom * Math.min(W, H) * 0.15;
+            
+            let allVerts = [];
+            state.shapes.forEach(s => allVerts = allVerts.concat(s.vertices));
+            if (!allVerts.length) return;
+            
+            const minX = Math.min(...allVerts.map(v => v[0]));
+            const maxX = Math.max(...allVerts.map(v => v[0]));
+            const minY = Math.min(...allVerts.map(v => v[1]));
+            const maxY = Math.max(...allVerts.map(v => v[1]));
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
+            
+            const sheetMinX = minX - state.margin;
+            const sheetMaxX = maxX + state.margin;
+            const sheetMinY = minY - state.margin;
+            const sheetMaxY = maxY + state.margin;
+            
+            const sx = (s) => cx + (s - centerX) * scale;
+            const sy = (s) => cy - (s - centerY) * scale;
+            
+            ctx.save();
+            ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 6]);
+            ctx.beginPath();
+            ctx.moveTo(sx(sheetMinX), sy(sheetMinY));
+            ctx.lineTo(sx(sheetMaxX), sy(sheetMinY));
+            ctx.lineTo(sx(sheetMaxX), sy(sheetMaxY));
+            ctx.lineTo(sx(sheetMinX), sy(sheetMaxY));
+            ctx.closePath();
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            state.shapes.forEach((shape, idx) => {
+                const verts = shape.vertices;
+                if (verts.length < 3) return;
+                
+                const isOuter = (idx === state.outerId);
+                const isHole = state.holeIds.includes(idx);
+                const isSelected = (state.selectedShape === idx);
+                
+                let color, fillColor, lineWidth;
+                if (isOuter) {
+                    color = '#00d4ff';
+                    fillColor = 'rgba(0, 212, 255, 0.15)';
+                    lineWidth = 3;
+                } else if (isHole) {
+                    color = '#ef4444';
+                    fillColor = 'rgba(239, 68, 68, 0.2)';
+                    lineWidth = 2;
+                } else {
+                    color = '#f59e0b';
+                    fillColor = 'rgba(245, 158, 11, 0.1)';
+                    lineWidth = 1.5;
+                }
+                
+                if (isSelected) {
+                    lineWidth += 3;
+                    color = '#ffffff';
+                }
+                
+                ctx.beginPath();
+                const first = verts[0];
+                ctx.moveTo(sx(first[0]), sy(first[1]));
+                for (let i = 1; i < verts.length; i++) {
+                    ctx.lineTo(sx(verts[i][0]), sy(verts[i][1]));
+                }
+                ctx.closePath();
+                ctx.fillStyle = fillColor;
+                ctx.fill();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = lineWidth;
+                ctx.stroke();
+                
+                const cx2 = shape.center ? shape.center[0] : (verts.reduce((s,v) => s + v[0], 0) / verts.length);
+                const cy2 = shape.center ? shape.center[1] : (verts.reduce((s,v) => s + v[1], 0) / verts.length);
+                const px = sx(cx2), py = sy(cy2);
+                
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.beginPath();
+                ctx.arc(px, py, 14, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = color;
+                ctx.font = 'bold 11px system-ui';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(idx, px, py + 1);
+            });
+            
+            if (state.selectedShape !== null && state.selectedShape < state.shapes.length) {
+                ctx.fillStyle = 'rgba(255,255,255,0.6)';
+                ctx.font = '12px system-ui';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'bottom';
+                const shape = state.shapes[state.selectedShape];
+                const isOuter = (state.selectedShape === state.outerId);
+                const isHole = state.holeIds.includes(state.selectedShape);
+                let role = 'Unassigned';
+                if (isOuter) role = '🟦 Main Part';
+                else if (isHole) role = '🟥 Hole';
+                ctx.fillText(`Shape ${state.selectedShape}: ${role}  |  Area: ${shape.area} mm²  |  Perimeter: ${shape.perimeter} mm`, 20, canvas.height - 20);
+            }
+            
+            ctx.restore();
+            
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.font = '11px system-ui';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(`Zoom: ${(state.zoom * 100).toFixed(0)}%`, canvas.width - 20, canvas.height - 20);
+        }
+        
+        // ============ MOUSE EVENTS ============
+        function getMousePos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
+        
+        function hitTest(mx, my) {
+            const W = canvas.width, H = canvas.height;
+            const scale = state.zoom * Math.min(W, H) * 0.15;
+            let allVerts = [];
+            state.shapes.forEach(s => allVerts = allVerts.concat(s.vertices));
+            if (!allVerts.length) return -1;
+            const minX = Math.min(...allVerts.map(v => v[0]));
+            const maxX = Math.max(...allVerts.map(v => v[0]));
+            const minY = Math.min(...allVerts.map(v => v[1]));
+            const maxY = Math.max(...allVerts.map(v => v[1]));
+            const cx = (minX + maxX) / 2;
+            const cy = (minY + maxY) / 2;
+            
+            for (let idx = state.shapes.length - 1; idx >= 0; idx--) {
+                const shape = state.shapes[idx];
+                const verts = shape.vertices;
+                if (verts.length < 3) continue;
+                
+                let inside = false;
+                for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+                    const xi = W/2 + state.panX + (verts[i][0] - cx) * scale;
+                    const yi = H/2 + state.panY - (verts[i][1] - cy) * scale;
+                    const xj = W/2 + state.panX + (verts[j][0] - cx) * scale;
+                    const yj = H/2 + state.panY - (verts[j][1] - cy) * scale;
+                    const intersect = ((yi > my) !== (yj > my)) && (mx < (xj - xi) * (my - yi) / (yj - yi) + xi);
+                    if (intersect) inside = !inside;
+                }
+                if (inside) return idx;
+            }
+            return -1;
+        }
+        
+        canvas.addEventListener('mousedown', (e) => {
+            const pos = getMousePos(e);
+            
+            const hit = hitTest(pos.x, pos.y);
+            if (hit >= 0 && !state.isDragging) {
+                state.selectedShape = hit;
+                
+                if (e.shiftKey) {
+                    if (state.outerId === hit) {
+                        // Can't make outer a hole
+                    } else if (state.holeIds.includes(hit)) {
+                        state.holeIds = state.holeIds.filter(id => id !== hit);
+                    } else {
+                        state.holeIds.push(hit);
+                    }
+                } else {
+                    state.outerId = hit;
+                    state.holeIds = state.holeIds.filter(id => id !== hit);
+                }
+                
+                render();
+                updateInfo();
+                calculatePrice();
+                return;
+            }
+            
+            state.isDragging = true;
+            state.dragStartX = pos.x;
+            state.dragStartY = pos.y;
+            state.lastPanX = state.panX;
+            state.lastPanY = state.panY;
+            canvas.style.cursor = 'grabbing';
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            const pos = getMousePos(e);
+            if (state.isDragging) {
+                state.panX = state.lastPanX + (pos.x - state.dragStartX);
+                state.panY = state.lastPanY + (pos.y - state.dragStartY);
+                render();
+            } else {
+                const hit = hitTest(pos.x, pos.y);
+                canvas.style.cursor = hit >= 0 ? 'pointer' : 'grab';
+            }
+        });
+        
+        canvas.addEventListener('mouseup', () => {
+            state.isDragging = false;
+            canvas.style.cursor = 'grab';
+        });
+        
+        canvas.addEventListener('mouseleave', () => {
+            state.isDragging = false;
+            canvas.style.cursor = 'grab';
+        });
+        
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            // Use sensitivity: divide by 100 then multiply by sensitivity/10
+            const sensitivityFactor = scrollSensitivity / 10;
+            const delta = e.deltaY > 0 ? -0.06 * sensitivityFactor : 0.06 * sensitivityFactor;
+            state.zoom = Math.max(0.02, Math.min(10, state.zoom + delta));
+            render();
+        }, { passive: false });
+        
+        // ============ FUNCTIONS ============
+        function resetView() {
+            state.panX = 0;
+            state.panY = 0;
+            state.zoom = 1;
+            render();
+        }
+        
+        function autoSelect() {
+            if (!state.shapes.length) return;
+            state.outerId = 0;
+            state.holeIds = state.shapes.slice(1).map((_, i) => i + 1);
+            state.selectedShape = 0;
+            render();
+            updateInfo();
+            calculatePrice();
+        }
+        
+        function updateInfo() {
+            if (!state.shapes.length) return;
+            const holes = state.holeIds.map(id => state.shapes[id]);
+            document.getElementById('partSize').textContent = `${state.partWidth} × ${state.partHeight} mm`;
+            document.getElementById('sheetSize').textContent = `${state.sheetWidth} × ${state.sheetHeight} mm`;
+            document.getElementById('piercings').textContent = holes.length;
+            document.getElementById('holeCount').textContent = holes.length;
+            
+            const tbody = document.getElementById('holesBody');
+            tbody.innerHTML = '';
+            holes.forEach((h, i) => {
+                const d = 2 * Math.sqrt(h.area / Math.PI);
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${i+1}</td><td>${d.toFixed(1)}</td><td>${h.perimeter.toFixed(1)}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+        
+        async function calculatePrice() {
+            if (!state.sessionId || !state.shapes.length) {
+                alert('Please upload a DXF file first.');
+                return;
+            }
+            
+            const data = {
+                session_id: state.sessionId,
+                outer_id: state.outerId,
+                hole_ids: state.holeIds,
+                material: document.getElementById('material').value,
+                thickness: parseFloat(document.getElementById('thickness').value),
+                cutting_speed: parseFloat(document.getElementById('speed').value),
+                piercing_time: parseFloat(document.getElementById('pierce').value),
+                hourly_rate: parseFloat(document.getElementById('hourly').value),
+                parts_per_sheet: parseFloat(document.getElementById('parts').value),
+                quantity: parseInt(document.getElementById('quantity').value) || 1
+            };
+            
+            try {
+                const res = await fetch('/calculate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (result.error) throw new Error(result.error);
+                
+                document.getElementById('cutLength').textContent = result.total_cut_length + ' mm';
+                document.getElementById('weight').textContent = result.weight_kg + ' kg';
+                document.getElementById('matPrice').textContent = result.material_price + ' TND';
+                document.getElementById('cutPrice').textContent = result.cutting_price + ' TND';
+                document.getElementById('finalPrice').textContent = result.final_price + ' TND';
+                
+                state.partWidth = result.part_width;
+                state.partHeight = result.part_height;
+                state.sheetWidth = result.sheet_width;
+                state.sheetHeight = result.sheet_height;
+                updateInfo();
+                
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+        
+        // ============ FILE UPLOAD ============
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const fileStatus = document.getElementById('fileStatus');
+        
+        dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+        dropzone.addEventListener('dragleave', () => { dropzone.classList.remove('dragover'); });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+        });
+        dropzone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) handleFile(e.target.files[0]);
+        });
+        
+        function applyDetectedProperties(parsed) {
+            // Apply detected material
+            if (parsed.material) {
+                const matSelect = document.getElementById('material');
+                for (let opt of matSelect.options) {
+                    if (opt.text.toLowerCase().includes(parsed.material.toLowerCase()) || 
+                        parsed.material.toLowerCase().includes(opt.text.toLowerCase())) {
+                        matSelect.value = opt.value;
+                        break;
+                    }
+                }
+                document.getElementById('detectedMaterial').textContent = parsed.material + ' ✅';
+            } else {
+                document.getElementById('detectedMaterial').textContent = '— (Manual)';
+            }
+            
+            // Apply detected thickness
+            if (parsed.thickness) {
+                document.getElementById('thickness').value = parsed.thickness;
+                document.getElementById('detectedThickness').textContent = parsed.thickness + ' mm ✅';
+            } else {
+                document.getElementById('detectedThickness').textContent = '— (Manual)';
+            }
+            
+            // Apply detected quantity
+            if (parsed.quantity) {
+                document.getElementById('quantity').value = parsed.quantity;
+                document.getElementById('detectedQuantity').textContent = parsed.quantity + ' pcs ✅';
+            } else {
+                document.getElementById('detectedQuantity').textContent = '— (Manual)';
+            }
+        }
+        
+        async function handleFile(file) {
+            if (!file.name.toLowerCase().endsWith('.dxf')) {
+                alert('Please upload a DXF file.');
+                return;
+            }
+            
+            // Parse filename
+            const parsed = parseFilename(file.name);
+            state.filename = file.name;
+            document.getElementById('detectedFilename').textContent = file.name;
+            
+            // Show detected properties
+            applyDetectedProperties(parsed);
+            
+            fileStatus.textContent = '📤 Uploading...';
+            fileStatus.className = 'file-status';
+            
+            const fd = new FormData();
+            fd.append('file', file);
+            
+            try {
+                const res = await fetch('/upload', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                
+                state.sessionId = data.session_id;
+                state.shapes = data.shapes;
+                state.outerId = data.outer_id;
+                state.holeIds = data.hole_ids;
+                state.partWidth = data.part_width;
+                state.partHeight = data.part_height;
+                state.sheetWidth = data.sheet_width;
+                state.sheetHeight = data.sheet_height;
+                state.totalCutLength = data.total_cut_length;
+                state.margin = data.margin;
+                state.selectedShape = 0;
+                
+                fileStatus.textContent = `✅ Loaded: ${file.name} (${data.shapes.length} shapes)`;
+                fileStatus.className = 'file-status loaded';
+                
+                fitToView();
+                updateInfo();
+                calculatePrice();
+                
+            } catch (err) {
+                fileStatus.textContent = '❌ ' + err.message;
+                fileStatus.className = 'file-status';
+                alert('Error: ' + err.message);
+            }
+        }
+        
+        // ============ INIT ============
+        resizeCanvas();
+        fitToView();
+    </script>
+</body>
+</html>

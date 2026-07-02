@@ -1,0 +1,74 @@
+{
+    "materials": [
+        {
+            "id": "steel_black",
+            "name": "Acier Noir (Black Metal)",
+            "price_per_kg": 3.5,
+            "density_kg_per_m3": 8000,
+            "description": "Black oxidized steel"
+        },
+        {
+            "id": "aluminum_6061",
+            "name": "Aluminium 6061",
+            "price_per_kg": 17.0,
+            "density_kg_per_m3": 2700,
+            "description": "Standard aluminium"
+        },
+        {
+            "id": "steel_mild",
+            "name": "Acier Doux (Mild Steel)",
+            "price_per_kg": 3.50,
+            "density_kg_per_m3": 7850,
+            "description": "Mild steel"
+        },
+        {
+            "id": "steel_stainless_304",
+            "name": "Acier Inoxydable 304",
+            "price_per_kg": 8.50,
+            "density_kg_per_m3": 7930,
+            "description": "Stainless steel 304"
+        },
+        {
+            "id": "steel_stainless_316",
+            "name": "Acier Inoxydable 316",
+            "price_per_kg": 12.00,
+            "density_kg_per_m3": 8000,
+            "description": "Marine grade stainless"
+        },
+        {
+            "id": "brass",
+            "name": "Laiton (Brass)",
+            "price_per_kg": 15.00,
+            "density_kg_per_m3": 8530,
+            "description": "Brass alloy"
+        },
+        {
+            "id": "copper",
+            "name": "Cuivre (Copper)",
+            "price_per_kg": 20.00,
+            "density_kg_per_m3": 8960,
+            "description": "Pure copper"
+        },
+        {
+            "id": "titanium",
+            "name": "Titane Grade 5",
+            "price_per_kg": 85.00,
+            "density_kg_per_m3": 4430,
+            "description": "Titanium alloy"
+        },
+        {
+            "id": "zinc",
+            "name": "Zinc",
+            "price_per_kg": 6.50,
+            "density_kg_per_m3": 7140,
+            "description": "Zinc alloy"
+        },
+        {
+            "id": "cast_iron",
+            "name": "Fonte (Cast Iron)",
+            "price_per_kg": 2.80,
+            "density_kg_per_m3": 7200,
+            "description": "Gray cast iron"
+        }
+    ]
+}
