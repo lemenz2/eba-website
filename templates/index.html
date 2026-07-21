@@ -129,7 +129,12 @@
                 <label>Quantity (pieces)</label>
                 <input type="number" id="quantity" value="1" step="1" min="1">
             </div>
-            
+            <!-- Add this in the sidebar section -->
+            <div class="form-group">
+                <label>Border/Margin (mm)</label>
+                <input type="number" id="margin" value="{{ default_margin }}" step="0.5" min="0">
+                <small style="color: #9ca3af; font-size: 0.65rem;">Free space from part edge to sheet edge</small>
+            </div>
             <!-- Machine Parameters -->
             <div class="param-grid">
                 <div class="form-group"><label>Speed (mm/min)</label><input type="number" id="speed" value="4000" step="100"></div>
