@@ -15,7 +15,8 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 ALLOWED_EXTENSIONS = {'dxf'}
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-FIXED_MARGIN_MM = 10
+# Default margin, will be configurable via frontend
+DEFAULT_MARGIN_MM = 10
 
 def load_materials():
     try:
@@ -183,7 +184,7 @@ def calculate_spline_length(spline):
 
 @app.route('/')
 def index():
-    return render_template('index.html', materials=load_materials())
+    return render_template('index.html', materials=load_materials(), default_margin=DEFAULT_MARGIN_MM)
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -195,6 +196,9 @@ def upload_file():
             return jsonify({'error': 'No file selected'}), 400
         if not allowed_file(file.filename):
             return jsonify({'error': 'Only DXF files allowed'}), 400
+        
+        # Get margin from request if provided
+        margin = float(request.form.get('margin', DEFAULT_MARGIN_MM))
         
         fname = secure_filename(file.filename)
         uniq = f"{uuid.uuid4().hex}_{fname}"
@@ -243,7 +247,8 @@ def upload_file():
             app.config['sessions'][session_id] = {
                 'path': path,
                 'loops_data': filtered_loops,
-                'msp': msp
+                'msp': msp,
+                'margin': margin  # Store margin in session
             }
             
             # Calculate total cut length (auto-detect)
@@ -255,15 +260,6 @@ def upload_file():
                 total_cut += outer['perimeter']
             for h in holes:
                 total_cut += h['perimeter']
-            
-            for line in msp.query('LINE'):
-                l = calculate_line_length(line)
-                if l > 0.5:
-                    total_cut += l
-            for arc in msp.query('ARC'):
-                total_cut += calculate_arc_length(arc)
-            for spline in msp.query('SPLINE'):
-                total_cut += calculate_spline_length(spline)
             
             # Get bounding box
             all_points = []
@@ -291,8 +287,8 @@ def upload_file():
                 max_y = max(p[1] for p in all_points)
                 part_w = max_x - min_x
                 part_h = max_y - min_y
-                sheet_w = part_w + (FIXED_MARGIN_MM * 2)
-                sheet_h = part_h + (FIXED_MARGIN_MM * 2)
+                sheet_w = part_w + (margin * 2)
+                sheet_h = part_h + (margin * 2)
             else:
                 part_w = part_h = sheet_w = sheet_h = 0
             
@@ -328,7 +324,7 @@ def upload_file():
                 'total_cut_length': round(total_cut, 2),
                 'outer_id': 0,
                 'hole_ids': [i for i in range(1, len(shapes))],
-                'margin': FIXED_MARGIN_MM,
+                'margin': margin,
                 'all_loops_count': len(loops_data),
                 'filtered_count': len(filtered_loops)
             })
@@ -354,6 +350,7 @@ def calculate():
         pierce_time = float(data.get('piercing_time', 5))
         hourly = float(data.get('hourly_rate', 250))
         parts = float(data.get('parts_per_sheet', 1))
+        margin = float(data.get('margin', DEFAULT_MARGIN_MM))  # Get margin from request
         
         session = app.config.get('sessions', {}).get(session_id)
         if not session:
@@ -368,22 +365,20 @@ def calculate():
         if not outer:
             return jsonify({'error': 'No outer shape selected'}), 400
         
-        # Calculate total cut length
+        # Calculate total cut length from selected shapes only
         total_cut = outer['perimeter']
         for h in holes:
             total_cut += h['perimeter']
         
-        for line in msp.query('LINE'):
-            l = calculate_line_length(line)
-            if l > 0.5:
-                total_cut += l
-        for arc in msp.query('ARC'):
-            total_cut += calculate_arc_length(arc)
-        for spline in msp.query('SPLINE'):
-            total_cut += calculate_spline_length(spline)
+        # Calculate times correctly
+        # cut_speed is in mm/min, so time = length / speed
+        cut_time_minutes = total_cut / cut_speed
         
-        piercings = len(holes)
-        cut_time = (total_cut * 60 / cut_speed) + (piercings * pierce_time)
+        # pierce_time is in seconds, convert to minutes
+        pierce_time_minutes = (len(holes) * pierce_time) / 60
+        
+        # Total time in minutes
+        total_time_minutes = cut_time_minutes + pierce_time_minutes
         
         # Bounding box with margin
         all_points = []
@@ -405,23 +400,32 @@ def calculate():
             all_points.append((cx - r, cy - r))
         
         if all_points:
-            min_x = min(p[0] for p in all_points) - FIXED_MARGIN_MM
-            max_x = max(p[0] for p in all_points) + FIXED_MARGIN_MM
-            min_y = min(p[1] for p in all_points) - FIXED_MARGIN_MM
-            max_y = max(p[1] for p in all_points) + FIXED_MARGIN_MM
-            sheet_w = max_x - min_x
-            sheet_h = max_y - min_y
+            min_x = min(p[0] for p in all_points)
+            max_x = max(p[0] for p in all_points)
+            min_y = min(p[1] for p in all_points)
+            max_y = max(p[1] for p in all_points)
+            part_w = max_x - min_x
+            part_h = max_y - min_y
+            sheet_w = part_w + (margin * 2)
+            sheet_h = part_h + (margin * 2)
             sheet_area = sheet_w * sheet_h
         else:
-            sheet_w = sheet_h = sheet_area = 0
+            part_w = part_h = sheet_w = sheet_h = sheet_area = 0
         
         # Get material
         mats = load_materials()
         material = next((m for m in mats if m['id'] == material_id), mats[0])
         
+        # Calculate weight
         weight = (sheet_area * thickness * material['density_kg_per_m3']) / 1000000000
+        
+        # Calculate costs
         mat_price = weight * material['price_per_kg']
-        labor = (cut_time + (60 / parts)) * hourly / 3600
+        
+        # Labor cost: total_time_minutes / 60 = hours, times hourly rate
+        labor = (total_time_minutes / 60) * hourly
+        
+        # Final price
         final_price = mat_price + labor
         
         # Hole data for table
@@ -438,8 +442,8 @@ def calculate():
         
         return jsonify({
             'success': True,
-            'part_width': round(sheet_w - (FIXED_MARGIN_MM * 2), 2),
-            'part_height': round(sheet_h - (FIXED_MARGIN_MM * 2), 2),
+            'part_width': round(part_w, 2),
+            'part_height': round(part_h, 2),
             'sheet_width': round(sheet_w, 2),
             'sheet_height': round(sheet_h, 2),
             'sheet_area': round(sheet_area, 2),
@@ -447,14 +451,14 @@ def calculate():
             'hole_count': len(holes_data),
             'holes': holes_data,
             'total_cut_length': round(total_cut, 2),
-            'number_of_piercings': piercings,
+            'number_of_piercings': len(holes_data),
             'weight_kg': round(weight, 6),
             'material_price': round(mat_price, 3),
             'material_name': material['name'],
-            'cutting_time_minutes': round(cut_time, 2),
+            'cutting_time_minutes': round(total_time_minutes, 2),
             'cutting_price': round(labor, 3),
             'final_price': round(final_price, 3),
-            'margin': FIXED_MARGIN_MM
+            'margin': margin
         })
         
     except Exception as e:
